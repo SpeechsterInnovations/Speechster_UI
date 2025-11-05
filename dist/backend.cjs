@@ -9,8 +9,33 @@ var { WebSocketServer } = require("ws");
 var crypto = require("crypto");
 var path = require("path");
 var { spawn } = require("child_process");
+var currentDeviceId = null;
+var lastTelemetry = null;
+var currentCommand = null;
+var lastAudioFiles = [];
 if (!process.pkg && process.argv[2] !== "--child") {
   const { spawn: spawn2 } = require("child_process");
+  const aiProc2 = spawn2("python3", ["ai_stream.py"], { stdio: ["pipe", "pipe", "inherit"] });
+  aiProc2.stdout.on("data", (data) => {
+    const lines = data.toString().trim().split("\n");
+    for (const line of lines) {
+      try {
+        const result = JSON.parse(line);
+        emitToWebClients("esp.ai_result", result);
+        console.log("\u{1F9E0} AI:", result);
+      } catch (err) {
+      }
+    }
+  });
+  aiProc2.on("exit", (code) => {
+    console.warn(`\u26A0\uFE0F AI process exited with code ${code}`);
+  });
+  process.on("exit", () => {
+    try {
+      aiProc2.kill();
+    } catch {
+    }
+  });
   const execPath = process.execPath;
   const scriptArg = process.argv[1];
   const childArgs = [scriptArg, "--child", ...process.argv.slice(2)];
@@ -68,18 +93,94 @@ try {
 }
 var httpServer = http.createServer(app);
 var httpsServer = SSL_OPTS ? https.createServer(SSL_OPTS, app) : null;
-var wssHttp = new WebSocketServer({ server: httpServer, path: "/ws" });
-var wssHttps = httpsServer ? new WebSocketServer({ server: httpsServer, path: "/ws" }) : null;
+var wssHttp = new WebSocketServer({ noServer: true });
+var wssHttps = httpsServer ? new WebSocketServer({ noServer: true }) : null;
+var wssAudio = new WebSocketServer({ noServer: true });
+var wssAudioHttps = httpsServer ? new WebSocketServer({ noServer: true }) : null;
+httpServer.on("upgrade", (req, socket, head) => {
+  if (req.url === "/ws") {
+    wssHttp.handleUpgrade(req, socket, head, (ws) => {
+      wssHttp.emit("connection", ws, req);
+    });
+  } else if (req.url === "/data/audio") {
+    wssAudio.handleUpgrade(req, socket, head, (ws) => {
+      wssAudio.emit("connection", ws, req);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+if (httpsServer) {
+  httpsServer.on("upgrade", (req, socket, head) => {
+    if (req.url === "/ws") {
+      wssHttps.handleUpgrade(req, socket, head, (ws) => {
+        wssHttps.emit("connection", ws, req);
+      });
+    } else if (req.url === "/data/audio") {
+      wssAudioHttps.handleUpgrade(req, socket, head, (ws) => {
+        wssAudioHttps.emit("connection", ws, req);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+}
+function startAudioHandler(wss) {
+  if (!wss) return;
+  wss.on("connection", (ws) => {
+    console.log("Audio stream connected");
+    const deviceId = currentDeviceId || "esp_unknown";
+    const { audioDir } = ensureDeviceFolder(deviceId);
+    const sessionId = crypto.randomUUID();
+    const filename = `stream_${sessionId}.raw`;
+    const outPath = path.join(audioDir, filename);
+    const fileStream = fs.createWriteStream(outPath);
+    ws.on("message", (chunk) => {
+      if (!Buffer.isBuffer(chunk)) return;
+      try {
+        fileStream.write(chunk);
+        if (aiProc && aiProc.stdin.writable) {
+          aiProc.stdin.write(chunk);
+        }
+      } catch (err) {
+        console.warn("Audio stream error:", err);
+      }
+    });
+    ws.on("close", () => {
+      try {
+        fileStream.end();
+      } catch {
+      }
+      console.log("Stream closed:", outPath);
+      const ts = Date.now();
+      lastAudioFiles.push({ device_id: deviceId, filename, ts });
+      if (lastAudioFiles.length > 1e3) lastAudioFiles.shift();
+      emitToWebClients("esp.audio", {
+        device_id: deviceId,
+        filename,
+        path: `/data/${deviceId}/audio/${filename}`,
+        ts
+      });
+    });
+    ws.on("error", (err) => {
+      console.warn("Audio WS error:", err.message);
+      try {
+        fileStream.end();
+      } catch {
+      }
+    });
+  });
+}
+startAudioHandler(wssAudio);
+startAudioHandler(wssAudioHttps);
 function allClients() {
   const out = [];
   if (wssHttp) out.push(...wssHttp.clients);
   if (wssHttps) out.push(...wssHttps.clients);
+  if (wssAudio) out.push(...wssAudio.clients);
+  if (wssAudioHttps) out.push(...wssAudioHttps.clients);
   return out;
 }
-var currentDeviceId = null;
-var lastTelemetry = null;
-var currentCommand = null;
-var lastAudioFiles = [];
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 var upload = multer({ storage: multer.memoryStorage(), limits: { fieldSize: 50 * 1024 * 1024 } });

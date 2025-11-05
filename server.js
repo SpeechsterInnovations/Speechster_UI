@@ -27,6 +27,34 @@ let lastAudioFiles = [];
 
 if (!process.pkg && process.argv[2] !== "--child") {
   const { spawn } = require("child_process");
+  // ─────────────────────────────
+  // 🎧 Start AI inference process (continuous PCM → label)
+  // ─────────────────────────────
+  const aiProc = spawn("python3", ["ai_stream.py"], { stdio: ["pipe", "pipe", "inherit"] });
+
+  aiProc.stdout.on("data", (data) => {
+    const lines = data.toString().trim().split("\n");
+    for (const line of lines) {
+      try {
+        const result = JSON.parse(line);
+        // Broadcast to all UI clients
+        emitToWebClients("esp.ai_result", result);
+        console.log("🧠 AI:", result);
+      } catch (err) {
+        // ignore partial prints or non-JSON output
+      }
+    }
+  });
+
+  aiProc.on("exit", (code) => {
+    console.warn(`⚠️ AI process exited with code ${code}`);
+  });
+
+  // graceful shutdown
+  process.on("exit", () => {
+    try { aiProc.kill(); } catch {}
+  });
+
   const execPath = process.execPath;
   const scriptArg = process.argv[1];
   const childArgs = [scriptArg, "--child", ...process.argv.slice(2)];
@@ -111,69 +139,97 @@ try {
 const httpServer = http.createServer(app);
 const httpsServer = SSL_OPTS ? https.createServer(SSL_OPTS, app) : null;
 
-// WebSocket servers
-const wssHttp = new WebSocketServer({ server: httpServer, path: "/ws" });
-const wssHttps = httpsServer ? new WebSocketServer({ server: httpsServer, path: "/ws" }) : null;
+// ─────────────────────────────
+// WebSocket + HTTPS Integration (reliable upgrade pattern)
+// ─────────────────────────────
 
-// ─────────────────────────────
-// Real-time audio WebSocket (minimal / safe handler)
-// ─────────────────────────────
-const wssAudio = new WebSocketServer({ server: httpServer, path: "/data/audio" });
-const wssAudioHttps = httpsServer ? new WebSocketServer({ server: httpsServer, path: "/data/audio" }) : null;
+// One WS server per transport type
+const wssHttp = new WebSocketServer({ noServer: true });
+const wssHttps = httpsServer ? new WebSocketServer({ noServer: true }) : null;
+
+// Audio WebSocket servers (for streaming PCM)
+const wssAudio = new WebSocketServer({ noServer: true });
+const wssAudioHttps = httpsServer ? new WebSocketServer({ noServer: true }) : null;
+
+// Attach upgrade handlers manually
+httpServer.on("upgrade", (req, socket, head) => {
+  if (req.url === "/ws") {
+    wssHttp.handleUpgrade(req, socket, head, (ws) => {
+      wssHttp.emit("connection", ws, req);
+    });
+  } else if (req.url === "/data/audio") {
+    wssAudio.handleUpgrade(req, socket, head, (ws) => {
+      wssAudio.emit("connection", ws, req);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
+if (httpsServer) {
+  httpsServer.on("upgrade", (req, socket, head) => {
+    if (req.url === "/ws") {
+      wssHttps.handleUpgrade(req, socket, head, (ws) => {
+        wssHttps.emit("connection", ws, req);
+      });
+    } else if (req.url === "/data/audio") {
+      wssAudioHttps.handleUpgrade(req, socket, head, (ws) => {
+        wssAudioHttps.emit("connection", ws, req);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+}
+
 
 function startAudioHandler(wss) {
   if (!wss) return;
   wss.on("connection", (ws) => {
-    console.log("🎧 Audio stream connected");
-    // create a per-connection session file in the device folder
+    console.log("Audio stream connected");
     const deviceId = currentDeviceId || "esp_unknown";
     const { audioDir } = ensureDeviceFolder(deviceId);
     const sessionId = crypto.randomUUID();
     const filename = `stream_${sessionId}.raw`;
     const outPath = path.join(audioDir, filename);
-
-    // create a writable stream (non-blocking)
-    let fileStream;
-    try {
-      fileStream = fs.createWriteStream(outPath);
-    } catch (e) {
-      console.error("Failed to open audio file for writing:", e);
-      ws.close(1011, "server-error");
-      return;
-    }
+    const fileStream = fs.createWriteStream(outPath);
 
     ws.on("message", (chunk) => {
+      if (!Buffer.isBuffer(chunk)) return;
       try {
-        if (Buffer.isBuffer(chunk)) {
-          fileStream.write(chunk);
-        } else {
-          // keep existing control JSON handling for this socket (if JSON arrives here)
-          // ignore or log non-binary messages for audio stream sockets
-          // (no-op to avoid interfering with control channel)
+        // write to disk (optional backup)
+        fileStream.write(chunk);
+
+        // forward to AI process for real-time classification
+        if (aiProc && aiProc.stdin.writable) {
+          aiProc.stdin.write(chunk);
         }
-      } catch (e) {
-        console.warn("Audio write error:", e);
+      } catch (err) {
+        console.warn("Audio stream error:", err);
       }
     });
 
     ws.on("close", () => {
-      try { fileStream.end(); } catch (e) {}
-      console.log("Audio stream closed — saved:", outPath);
-
-      // record in lastAudioFiles and notify UI same as upload endpoint does
+      try { fileStream.end(); } catch {}
+      console.log("Stream closed:", outPath);
       const ts = Date.now();
       lastAudioFiles.push({ device_id: deviceId, filename, ts });
       if (lastAudioFiles.length > 1000) lastAudioFiles.shift();
-
-      emitToWebClients("esp.audio", { device_id: deviceId, filename, path: `/data/${deviceId}/audio/${filename}`, ts });
+      emitToWebClients("esp.audio", {
+        device_id: deviceId,
+        filename,
+        path: `/data/${deviceId}/audio/${filename}`,
+        ts,
+      });
     });
 
     ws.on("error", (err) => {
-      console.warn("Audio WS error:", err && err.message);
-      try { fileStream.end(); } catch (e) {}
+      console.warn("Audio WS error:", err.message);
+      try { fileStream.end(); } catch {}
     });
   });
 }
+
 
 startAudioHandler(wssAudio);
 startAudioHandler(wssAudioHttps);
@@ -434,7 +490,6 @@ safeListen(httpServer, HTTP_PORT, "HTTP");
 if (httpsServer) {
   httpsServer.listen(HTTPS_PORT, "0.0.0.0", () => {
     console.log(`HTTPS server (Browser) listening on https://0.0.0.0:${HTTPS_PORT}`);
-    // auto-open browser (you asked yes)
     try {
       openBrowser(`https://0.0.0.0:${HTTPS_PORT}`);
     } catch (e) { console.warn("openBrowser failed:", e && e.message); }

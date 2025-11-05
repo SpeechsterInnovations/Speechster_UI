@@ -41,6 +41,12 @@ const AppState = {
   },
 };
 
+const ExpectedWords = {
+  "practice-screen": ["no"],
+  "level-screen-1": [],
+  "level-screen-2": ["one"]
+};
+
 // Unlock audio on first interaction and start silent sound
 ["click", "touchstart", "keydown"].forEach(evt => {
   window.addEventListener(evt, () => {
@@ -1382,10 +1388,49 @@ async function sendBLECommand(command) {
   }
 }
 
-const ws = new WebSocket(`${window.location.origin.replace('http', 'ws')}/ws`);
+const wsHost = window.location.hostname === "0.0.0.0" ? "localhost" : window.location.hostname;
+const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+const wsPort = window.location.port ? `:${window.location.port}` : "";
+const ws = new WebSocket(`${wsProtocol}//${wsHost}${wsPort}/ws`);
+
+// Keep track of last accepted word timestamps
+const lastWordTimes = {};
+
+// Minimum delay (ms) between valid detections of the same word
+const DETECTION_COOLDOWN_MS = 2000;
+// Helper to translate screen IDs into scoring modes
+function getModeFromScreen(screenId) {
+  if (screenId === "practice-screen") return "practice";
+  if (screenId === "level-screen-1") return "level1";
+  if (screenId === "level-screen-2") return "level2";
+  return "practice"; // fallback
+}
+
 ws.onmessage = (msg) => {
   const event = JSON.parse(msg.data);
-  console.log('WS event:', event);
+
+  if (event.type === "esp.ai_result") {
+    const { label, confidence } = event.payload;
+    const pct = Math.round(confidence * 100);
+    const currentScreen = AppState.currentScreen;
+    const expectedWords = ExpectedWords[currentScreen] || [];
+    const now = Date.now();
+
+    // Debounce: ignore duplicates too soon
+    if (lastWordTimes[label] && now - lastWordTimes[label] < DETECTION_COOLDOWN_MS) {
+      console.log(`⏱️ Ignored repeated "${label}" (cooldown active)`);
+      return;
+    }
+
+    // Check if the detected word is expected
+    if (expectedWords.includes(label.toLowerCase()) && confidence >= 0.75) {
+      console.log(`✅ Correct word detected for ${currentScreen}: ${label} (${pct}%)`);
+      increaseScore(getModeFromScreen(currentScreen));
+      lastWordTimes[label] = now; // mark as recently accepted
+    } else {
+      console.log(`❌ Incorrect or low-confidence word: ${label} (${pct}%)`);
+    }
+  }
 };
 
 // Called whenever AI inference is received or stubbed
