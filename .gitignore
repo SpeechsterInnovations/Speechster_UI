@@ -1,22 +1,74 @@
-node_modules
+# ──────────────────────────────
+# 🧠 General Git Hygiene
+# ──────────────────────────────
+.git/
+.gitattributes
+.gitignore
+.gitmodules
+.gitconfig
+.git-credentials
+.gitreview
+.gitkeep
 
-# Python environment
-speechster_env/
-__pycache__/
-*.pyc
+# Ignore any local Git hook backups or experimental branches
+.git-rewrite/
+.git-old/
+.git-saved/
+.gitbackup/
 
-# Build outputs
-*.exe
-*.dll
-*.so
-*.dylib
-
-# Media
-*.mp3
-*.mp4
-*.webm
-
-# OS junk
+# ──────────────────────────────
+# ⚙️ System Files & Temp Data
+# ──────────────────────────────
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+*.log
+
+# ──────────────────────────────
+# 💻 Node / Frontend Dev
+# ──────────────────────────────
+node_modules/
+dist/
+build/
+.cache/
+.env
+.env.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+speechsterUI-*
+
+# ──────────────────────────────
+# ⚡ ESP-IDF / Firmware / Embedded
+# ──────────────────────────────
+*.elf
+*.bin
+*.map
+*.hex
+sdkconfig.old
+build/
+cmake-build-*/
+
+# ──────────────────────────────
+# 🧰 OS & Editor Metadata
+# ──────────────────────────────
+.vscode/
+.idea/
+*.code-workspace
+*.iml
+*.sublime-project
+*.sublime-workspace
+
+# ──────────────────────────────
+# 🎨 Misc Project-Specific
+# ──────────────────────────────
+data/
+tmp/
+out/
+*.pid
+*.lock
 
