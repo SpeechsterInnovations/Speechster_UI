@@ -1392,6 +1392,8 @@ const wsHost = window.location.hostname === "0.0.0.0" ? "localhost" : window.loc
 const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 const wsPort = window.location.port ? `:${window.location.port}` : "";
 const ws = new WebSocket(`${wsProtocol}//${wsHost}${wsPort}/ws`);
+window.ws = ws;
+
 
 // Keep track of last accepted word timestamps
 const lastWordTimes = {};
