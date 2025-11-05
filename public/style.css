@@ -1,0 +1,533 @@
+/* style.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+:root {
+  /* Dark Mode Defaults */
+  --color-text: #f0f0f0;
+  --color-background-body: #141414;
+  --color-background-app: rgba(255, 255, 255, 0.15);
+  --color-border-app: rgba(255, 255, 255, 0.25);
+  --color-shadow-app: rgba(0,0,0,0.25);
+  --color-button-background: rgba(255, 255, 255, 0.02);
+  --color-button-border: rgba(255, 255, 255, 0.08);
+  --color-button-background-hover: rgba(255, 255, 255, 0.05);
+  --color-border-hr: rgba(255, 255, 255, 0.15);
+  --color-text-feedback: #fff;
+  --color-back-btn: #fff;
+  --color-particle: rgb(255, 255, 255);
+}
+
+/* Light Mode Overrides */
+body.light-mode {
+  --color-text: #333;
+   --color-background-body: #c5c5c5;
+  --color-background-app: rgba(236, 236, 236, 0.3);
+  --color-border-app: rgba(0, 0, 0, 0.03);
+  --color-shadow-app: rgba(0, 0, 0, 0.08);
+  --color-button-background: rgba(0, 0, 0, 0.02);
+  --color-button-border: rgba(0, 0, 0, 0.08);
+  --color-button-background-hover: rgba(0, 0, 0, 0.05);
+  --color-border-hr: rgba(0, 0, 0, 0.1);
+  --color-text-feedback: #333;
+  --color-back-btn: #333;
+  --color-particle: rgb(0, 0, 0);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-size: 200% 200%;
+  animation: bgShift 15s ease infinite;
+  color: var(--color-text);
+  transition: background-color 0.5s ease;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background: linear-gradient(135deg, #1c2b3a 0%, #144263 100%);
+}
+
+@keyframes bgShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+
+#app-container {
+  background: var(--color-background-app);
+  border: 1px solid var(--color-border-app);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px var(--color-shadow-app);
+  text-align: center;
+  width: 95%;
+  max-width: 500px;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+  max-height: 95vh;   /* prevents it from overflowing the screen */
+  overflow: auto;
+  width: 360px;
+  padding: 20px;
+  border-radius: 16px;
+  backdrop-filter: blur(2px) saturate(180%);
+  -webkit-backdrop-filter: blur(2px) saturate(180%);
+  transition: height 0.5s cubic-bezier(0.17, 0.88, 0.49, 1.25), background-color 0.5s ease;
+}
+
+/* Background Video */
+
+#background-video {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+
+#app-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+#app-container::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.2);
+  border-radius: 4px;
+}
+
+#app-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(0,0,0,0.3);
+}
+
+.screen {
+  display: none; /* hide inactive screens */
+}
+
+.screen.active {
+  display: flex; /* flex layout for active screens */
+  flex-direction: column;
+  min-height: 400px;
+  position: relative; /* keep it in flow */
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Particle Background */
+#particle-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+#app-container::-webkit-scrollbar {
+  display: none;
+}
+
+/* Patient Dashboard Styles */
+
+#patient-dashboard-screen {
+  min-height: 80vh;  /* or 100vh if you want full height */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+
+
+/* Auth Screen Styles */
+#auth-screen {
+  justify-content: center;
+  text-align: center;
+}
+
+#auth-forms-container {
+  justify-content: center;
+  text-align: center;
+}
+
+#login-form, #register-form, #wifi-login-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+#login-form input,
+#register-form input,
+#register-form select,
+#wifi-ssid,
+#wifi-pass{
+  width: 95%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-hr);
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--color-text);
+  font-size: 16px;
+}
+
+#login-form input::placeholder,
+#register-form input::placeholder {
+  color: var(--color-text);
+  opacity: 0.7;
+}
+
+.auth-message {
+  min-height: 20px;
+  font-size: 0.9em;
+  color: #e67c7c;
+}
+
+.logout-btn {
+  margin-top: 20px;
+}
+
+/* Typography and Elements */
+h1 {
+  font-size: 2.4em;
+  font-weight: 600;
+  margin-bottom: 15px;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.4);
+}
+
+p {
+  font-size: 1.1em;
+  font-weight: 400;
+  margin-bottom: 8px;
+}
+
+hr {
+  margin: 15px 0;
+  width: 90%;
+  border: 0;
+  border-top: 1px solid var(--color-border-hr);
+}
+
+.btn {
+  background: var(--color-button-background);
+  border: 1px solid var(--color-button-border);
+  padding: 14px 28px;
+  border-radius: 10px;
+  color: inherit;
+  font-size: 1.1em;
+  font-weight: 500;
+  cursor: pointer;
+  margin: 10px;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(5px) saturate(180%);
+  -webkit-backdrop-filter: blur(5px) saturate(180%);
+  min-width: 140px;
+}
+
+.btn:hover {
+  background: var(--color-button-background-hover);
+  box-shadow: 0 0 12px var(--color-shadow-app);
+  transform: translateY(-2px);
+  backdrop-filter: blur(10px) saturate(180%);
+  -webkit-backdrop-filter: blur(10px) saturate(180%);
+}
+
+.score-display, .timer {
+  font-size: 3.2em;
+  font-weight: 600;
+  margin: 15px 0;
+  text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.feedback-message {
+  font-size: 1.3em;
+  font-style: italic;
+  min-height: 40px;
+  margin-top: 15px;
+  transition: color 0.3s ease;
+}
+
+.back-btn {
+  position: absolute;
+  top: 15px;
+  left: 15px;
+  background: none;
+  border: none;
+  font-size: 2em;
+  cursor: pointer;
+  padding: 5px;
+  color: var(--color-back-btn);
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+  z-index: 3;
+}
+
+.back-btn:hover {
+  opacity: 1;
+}
+
+#connection-status-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+#device-light {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.red-light { background-color: #ff6b6b; }
+.dark-red-light { background-color: #ff0000; }
+.yellow-light { background-color: #ffea7f; }
+.green-light { background-color: #81c784; }
+
+@keyframes blink-yellow {
+  0% { opacity: 1; }
+  50% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.blinking {
+  animation: blink-yellow 1s infinite;
+}
+
+.button-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.bottom-buttons {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  padding: 0 30px;
+  box-sizing: border-box;
+}
+
+@media (min-width: 768px) {
+  #app-container {
+width: 90%;
+max-width: 550px;
+  }
+  
+  #fixed-header {
+width: 90%;
+max-width: 550px;
+  }
+  
+  .button-container {
+flex-direction: row;
+justify-content: center;
+flex-wrap: wrap;
+  }
+  
+  .btn {
+flex-basis: auto;
+margin: 12px;
+  }
+}
+
+@media (min-width: 1024px) {
+  #app-container {
+width: 85%;
+max-width: 600px;
+  }
+  
+  #fixed-header {
+width: 85%;
+max-width: 600px;
+  }
+  
+  h1 {
+font-size: 2.6em;
+  }
+  
+  .btn {
+padding: 16px 32px;
+font-size: 1.2em;
+  }
+}
+
+
+/* Toast container stays top-right */
+#toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 2000;
+}
+
+/* Base toast (long banner style) */
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 380px;
+  padding: 18px 22px;
+  border-radius: 14px;
+  font-size: 1em;
+  color: #fff;
+  backdrop-filter: blur(2px) saturate(180%);
+  -webkit-backdrop-filter: blur(2px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+
+  position: relative;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(120%);
+  animation: toastIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards,
+ toastOut 1s cubic-bezier(0.22, 1, 0.36, 1) forwards 4.8s;
+}
+
+/* Subtle glass shine */
+.toast::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(255,255,255,0.15), transparent 70%);
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/* Category label (above message) */
+.toast-header {
+  font-size: 0.8em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  text-shadow: 0 0 10px rgba(255,255,255,0.6);
+}
+
+/* Glow per type */
+.toast-success .toast-header {
+  color: #5dff92;
+  text-shadow: 0 0 12px rgba(93, 255, 146, 0.8), 0 0 20px rgba(93, 255, 146, 0.6);
+}
+.toast-error .toast-header {
+  color: #ff7070;
+  text-shadow: 0 0 12px rgba(255, 112, 112, 0.8), 0 0 20px rgba(255, 112, 112, 0.6);
+}
+.toast-warning .toast-header {
+  color: #ffd86b;
+  text-shadow: 0 0 12px rgba(255, 216, 107, 0.8), 0 0 20px rgba(255, 216, 107, 0.6);
+}
+.toast-info .toast-header {
+  color: #6bbcff;
+  text-shadow: 0 0 12px rgba(107, 188, 255, 0.8), 0 0 20px rgba(107, 188, 255, 0.6);
+}
+
+/* Toast message text */
+.toast-body {
+  font-size: 1em;
+  line-height: 1.4;
+}
+
+/* Toast icon */
+.toast-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.15);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 22px;
+  box-shadow: 0 0 12px rgba(255,255,255,0.3);
+}
+
+/* Animations */
+@keyframes toastIn {
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes toastOut {
+  to { opacity: 1; transform: translateX(120%); }
+}
+
+/* NEW SLIDER STYLES */
+.slider-card {
+    padding: 2rem;
+    border-radius: 1rem;
+    text-align: center;
+    width: 100%;
+    max-width: 400px;
+    margin-top: 2rem;
+}
+
+.slider-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 0.5rem;
+}
+
+
+.slider-container {
+    width: 100%;
+}
+
+input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 12px;
+    background: var(--color-button-background-hover);
+    border-radius: 6px;
+    outline: none;
+    transition: background 0.2s ease-in-out;
+}
+
+input[type="range"]:hover {
+    background: var(--color-border-hr);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 24px;
+    height: 24px;
+    background: var(--color-text);
+    border: 2px solid var(--color-background-body);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+    background: var(--color-text);
+    border: 2px solid var(--color-background-body);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}

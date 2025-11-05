@@ -1,0 +1,7 @@
+[gc]
+  auto = 0
+  pruneExpire = now
+  logExpire = now
+  packRefs = true
+  writeCommitGraph = true
+
