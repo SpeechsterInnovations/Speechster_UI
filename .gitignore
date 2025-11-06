@@ -41,6 +41,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 speechsterUI-*
+dist/backend.cjs
+speechsterUI-linux
+speechsterUI-macos
 
 # ──────────────────────────────
 # ⚡ ESP-IDF / Firmware / Embedded
@@ -71,4 +74,3 @@ tmp/
 out/
 *.pid
 *.lock
-

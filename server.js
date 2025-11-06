@@ -10,6 +10,7 @@ const { WebSocketServer } = require("ws");
 const crypto = require("crypto");
 const path = require("path");
 const { spawn } = require("child_process");
+const os = require("os");
 
 // ─────────────────────────────────────────────
 // Speechster Backend — Safe Launcher (pkg-aware)
@@ -288,11 +289,11 @@ function ensureDeviceFolder(deviceId) {
   return { dir, audioDir };
 }
 
-function safeListen(server, port, name) {
-  server.listen(port, "0.0.0.0");
+function safeListen(server, HTTPS_PORT, name) {
+  server.listen(HTTPS_PORT, "0.0.0.0");
   server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
-      console.error(`Port ${port} already in use (${name}).`);
+      console.error(`Port ${HTTPS_PORT} already in use (${name}).`);
       process.exit(1);
     }
   });
@@ -481,6 +482,22 @@ process.on("uncaughtException", (err) => {
   gracefulShutdown("uncaughtException");
 });
 
+function getLANIP() {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === "IPv4" && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return null;
+}
+
+const lanIP = getLANIP() || "localhost";
+const browserURL = `https://${lanIP}:${HTTPS_PORT}`;
+
+
 // -------------------------------
 // Start servers
 // -------------------------------
@@ -489,11 +506,17 @@ safeListen(httpServer, HTTP_PORT, "HTTP");
 
 if (httpsServer) {
   httpsServer.listen(HTTPS_PORT, "0.0.0.0", () => {
-    console.log(`HTTPS server (Browser) listening on https://0.0.0.0:${HTTPS_PORT}`);
-    try {
-      openBrowser(`https://0.0.0.0:${HTTPS_PORT}`);
-    } catch (e) { console.warn("openBrowser failed:", e && e.message); }
-  });
+  console.log(`Speechster server ready`);
+  console.log(`Local access:   https://${lanIP}:${HTTPS_PORT}`);
+  console.log(`ESP will connect to host_ip=${lanIP}`);
+  console.log(`If using another device, open the above URL in its browser`);
+  try {
+    open(browserURL);
+  } catch {
+    console.log(`(Couldn’t auto-open browser; open manually instead.)`);
+  }
+});
+
 } else {
   console.warn("HTTPS not started (missing certs). Starting HTTP only; Web Bluetooth will not work without trusted HTTPS.");
   // still open HTTP UI so you can test
