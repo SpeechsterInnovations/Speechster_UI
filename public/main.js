@@ -14,6 +14,37 @@ const TOAST_SOUNDS = {
   info   :              "/sounds/toasts/info.mp3",
 };
 
+// Centralized Toast Event Map
+const ToastEvents = {
+  BLE_CONNECTED: {
+    type: "success",
+    title: "Bluetooth Connected",
+    body: "Speechster device is now connected via Bluetooth and WiFi!"
+  },
+  WIFI_FAIL: {
+    type: "error",
+    title: "Wi-Fi Failed",
+    body: "Could not connect to the network. Please check your credentials."
+  },
+  SESSION_SAVED: {
+    type: "success",
+    title: "Session Saved",
+    body: "All session data was stored safely."
+  },
+  LOGIN_SUCCESS: {
+    type: "success",
+    title: "Login Successful",
+    body: "Welcome back to Speechster!"
+  },
+  LOGIN_FAILED: {
+    type: "warning",
+    title: "Login Failed",
+    body: "Incorrect credentials or user not found."
+  },
+  // Add more as needed...
+};
+
+
 function initAudioContext() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.AudioContext)();
@@ -421,7 +452,7 @@ async function saveDBData(mode) {
       }
 
       await writeToDB(path, payload);
-      showToast("success", `Data saved for ${mode} (${sessionId})`);
+      triggerToast("SESSION_SAVED")
 
   } catch (error) {
       console.error("Failed to save data:", error);
@@ -463,7 +494,7 @@ async function handleLogin(email, password) {
   try {
     const { signInWithEmailAndPassword } = window.firebaseModules;
     await signInWithEmailAndPassword(window.firebaseAuth, email, password);
-    showToast('success',`Logged In as ${email}`)
+    triggerToast("LOGIN_SUCCESS")
     console.log("Logged in as", email)
     return true;
   } catch (error) {
@@ -480,7 +511,7 @@ async function handleLogin(email, password) {
       errorMessage = 'Incorrect password.';
     }
 
-    showToast('warning',errorMessage)
+    showToast('error',errorMessage, "login failed")
     return false;
   }
 }
@@ -929,6 +960,20 @@ function showToast(type, message, header) {
   }
 }
 
+/**
+ * Fires a pre-mapped toast event.
+ * Example: triggerToast("BLE_CONNECTED");
+ */
+function triggerToast(eventKey) {
+  const t = ToastEvents[eventKey];
+  if (!t) {
+    console.warn(`⚠️ Unknown toast event: ${eventKey}`);
+    return;
+  }
+  showToast(t.type, t.body, t.title);
+}
+
+
 // -----------------
 // Background Sound
 // -----------------
@@ -995,36 +1040,6 @@ function selectPatient(patientId) {
   AppState.selectedPatientId = patientId;
   showToast("info", `Selected patient: ${patientId}`);
   return { success: true, patientId };
-}
-
-async function saveDataCommand(score, extraInfo = "") {
-  if (!AppState.user || AppState.user.designation !== 'doctor') {
-    showToast("error", "Only doctors can save data.", "critical error");
-    return { success: false, message: 'Not authorized' };
-  }
-  if (!AppState.selectedPatientId) {
-    showToast("error", "No patient selected.", "critical error");
-    return { success: false, message: 'No patient selected' };
-  }
-  try {
-    const doctorId = AppState.user.uid;
-    const patientId = AppState.selectedPatientId;
-    const sessionId = `session-${Date.now()}`;
-    const path = `patientData/${patientId}/sessions/${sessionId}`;
-    const payload = {
-      score,
-      extraInfo,
-      by: doctorId,
-      timestamp: serverTimestamp()
-    };
-    await writeToDB(path, payload);
-    showToast("success", `Data saved for ${patientId} (session ${sessionId})`);
-    return { success: true, patientId, sessionId, data: payload };
-  } catch (err) {
-    console.error(err);
-    showToast("error", "Failed to save data.", "critical error");
-    return { success: false, message: err.message };
-  }
 }
 
 // --------------------------
@@ -1257,9 +1272,9 @@ function handleNotification(event) {
     }
 
     if (msg.wifi && msg.wifi === "connected") {
-      showToast("success", "ESP32 connected to Wi-Fi!");
+      triggerToast("BLE_CONNECTED");
     } else if (msg.wifi && msg.wifi === "failed") {
-      showToast("error", "ESP32 failed to connect to Wi-Fi.");
+      triggerToast("WIFI_FAIL")
     }
 
     if (msg.ota) {
@@ -1332,7 +1347,7 @@ let bleFirstMessageSent = false;
 async function sendBLECommand(command) {
   const backendUrl = window.location.origin;
   const hostname = window.location.hostname;
-  const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
+  const port = 8080 // window.location.port || (window.location.protocol === "https:" ? "443" : "80"); <-- OLD CODE (DOESNT WORK)
 
   let hostIP = hostname;
 
@@ -1452,7 +1467,6 @@ Object.assign(window.firebaseModules, {
   assignPatient,
   unassignPatient,
   selectPatient,
-  saveDataCommand,
   showToast,
   navigateToScreen,
   sendBLECommand,
