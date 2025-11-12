@@ -45,6 +45,37 @@ const ToastEvents = {
 };
 
 
+// Centralized Toast Event Map
+const ToastEvents = {
+  BLE_CONNECTED: {
+    type: "success",
+    title: "Bluetooth Connected",
+    body: "Speechster device is now connected via Bluetooth and WiFi!"
+  },
+  WIFI_FAIL: {
+    type: "error",
+    title: "Wi-Fi Failed",
+    body: "Could not connect to the network. Please check your credentials."
+  },
+  SESSION_SAVED: {
+    type: "success",
+    title: "Session Saved",
+    body: "All session data was stored safely."
+  },
+  LOGIN_SUCCESS: {
+    type: "success",
+    title: "Login Successful",
+    body: "Welcome back to Speechster!"
+  },
+  LOGIN_FAILED: {
+    type: "warning",
+    title: "Login Failed",
+    body: "Incorrect credentials or user not found."
+  },
+  // Add more as needed...
+};
+
+
 function initAudioContext() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.AudioContext)();
@@ -453,6 +484,7 @@ async function saveDBData(mode) {
 
       await writeToDB(path, payload);
       triggerToast("SESSION_SAVED")
+      triggerToast("SESSION_SAVED")
 
   } catch (error) {
       console.error("Failed to save data:", error);
@@ -495,6 +527,7 @@ async function handleLogin(email, password) {
     const { signInWithEmailAndPassword } = window.firebaseModules;
     await signInWithEmailAndPassword(window.firebaseAuth, email, password);
     triggerToast("LOGIN_SUCCESS")
+    triggerToast("LOGIN_SUCCESS")
     console.log("Logged in as", email)
     return true;
   } catch (error) {
@@ -511,6 +544,7 @@ async function handleLogin(email, password) {
       errorMessage = 'Incorrect password.';
     }
 
+    showToast('error',errorMessage, "login failed")
     showToast('error',errorMessage, "login failed")
     return false;
   }
@@ -974,6 +1008,20 @@ function triggerToast(eventKey) {
 }
 
 
+/**
+ * Fires a pre-mapped toast event.
+ * Example: triggerToast("BLE_CONNECTED");
+ */
+function triggerToast(eventKey) {
+  const t = ToastEvents[eventKey];
+  if (!t) {
+    console.warn(`⚠️ Unknown toast event: ${eventKey}`);
+    return;
+  }
+  showToast(t.type, t.body, t.title);
+}
+
+
 // -----------------
 // Background Sound
 // -----------------
@@ -1273,7 +1321,9 @@ function handleNotification(event) {
 
     if (msg.wifi && msg.wifi === "connected") {
       triggerToast("BLE_CONNECTED");
+      triggerToast("BLE_CONNECTED");
     } else if (msg.wifi && msg.wifi === "failed") {
+      triggerToast("WIFI_FAIL")
       triggerToast("WIFI_FAIL")
     }
 
