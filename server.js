@@ -11,6 +11,8 @@ const crypto = require("crypto");
 const path = require("path");
 const { spawn } = require("child_process");
 const os = require("os");
+let aiProc = null;
+
 
 // ─────────────────────────────────────────────
 // Speechster Backend — Safe Launcher (pkg-aware)
@@ -25,61 +27,235 @@ let lastTelemetry = null;
 let currentCommand = null;
 let lastAudioFiles = [];
 
+// ─────────────────────────────
+// systemd-style Logger (TTY-aware)
+// ─────────────────────────────
+const useColor = process.stdout.isTTY;
 
-if (!process.pkg && process.argv[2] !== "--child") {
-  const { spawn } = require("child_process");
-  // ─────────────────────────────
-  // 🎧 Start AI inference process (continuous PCM → label)
-  // ─────────────────────────────
-  const aiProc = spawn("python3", ["ai_stream.py"], { stdio: ["pipe", "pipe", "inherit"] });
-
-  aiProc.stdout.on("data", (data) => {
-    const lines = data.toString().trim().split("\n");
-    for (const line of lines) {
-      try {
-        const result = JSON.parse(line);
-        // Broadcast to all UI clients
-        emitToWebClients("esp.ai_result", result);
-        console.log("🧠 AI:", result);
-      } catch (err) {
-        // ignore partial prints or non-JSON output
-      }
+const COLORS = useColor
+  ? {
+      reset: "\x1b[0m",
+      gray: "\x1b[90m",
+      red: "\x1b[91m",
+      green: "\x1b[92m",
+      yellow: "\x1b[93m",
+      blue: "\x1b[94m",
+      magenta: "\x1b[95m",
+      cyan: "\x1b[96m",
     }
-  });
+  : {
+      reset: "",
+      gray: "",
+      red: "",
+      green: "",
+      yellow: "",
+      blue: "",
+      magenta: "",
+      cyan: "",
+    };
 
-  aiProc.on("exit", (code) => {
-    console.warn(`⚠️ AI process exited with code ${code}`);
-  });
+function log(scope, ...args) {
+  const ts = new Date().toISOString().split("T")[1].split(".")[0]; // HH:MM:SS
+  const tag = `[${ts}] [${scope}]`;
+  const coloredTag = useColor
+    ? `${COLORS.gray}[${ts}]${COLORS.reset} [${COLORS.cyan}${scope}${COLORS.reset}]`
+    : tag;
+  console.log(coloredTag, ...args);
+}
 
-  // graceful shutdown
-  process.on("exit", () => {
-    try { aiProc.kill(); } catch {}
-  });
+function info(scope, msg) {
+  const ts = new Date().toISOString().split("T")[1].split(".")[0];
+  const ok = useColor
+    ? `${COLORS.green}[ OK ]${COLORS.reset}`
+    : `[ OK ]`;
+  console.log(`${COLORS.gray}[${ts}]${COLORS.reset} ${ok} [${scope}] ${msg}`);
+}
 
+function warn(scope, msg) {
+  const ts = new Date().toISOString().split("T")[1].split(".")[0];
+  const warn = useColor
+    ? `${COLORS.yellow}[WARN]${COLORS.reset}`
+    : `[WARN]`;
+  console.warn(`${COLORS.gray}[${ts}]${COLORS.reset} ${warn} [${scope}] ${msg}`);
+}
+
+function error(scope, msg) {
+  const ts = new Date().toISOString().split("T")[1].split(".")[0];
+  const fail = useColor
+    ? `${COLORS.red}[FAIL]${COLORS.reset}`
+    : `[FAIL]`;
+  console.error(`${COLORS.gray}[${ts}]${COLORS.reset} ${fail} [${scope}] ${msg}`);
+}
+
+// ─────────────────────────────
+// Launcher wrapper for pkg-aware reload
+// ─────────────────────────────
+if (!process.pkg && process.argv[2] !== "--child") {
   const execPath = process.execPath;
   const scriptArg = process.argv[1];
   const childArgs = [scriptArg, "--child", ...process.argv.slice(2)];
 
-  console.log("Spawning server child:", execPath, childArgs.join(" "));
+  info("CHILD", "Spawning server child:", execPath, childArgs.join(" "));
   const child = spawn(execPath, childArgs, { stdio: "inherit" });
 
   child.on("exit", (code, signal) => {
     if (signal === "SIGINT" || signal === "SIGTERM" || code === 0) {
-      console.log("Child exited cleanly — exiting parent.");
+      info("CHILD - EXT", "Child exited cleanly — exiting parent.");
       process.exit(0);
     } else {
-      console.log(`💥 Child crashed (code ${code}, signal ${signal}). Restarting in 3 s...`);
-      setTimeout(() => {
-        spawn(execPath, childArgs, { stdio: "inherit" });
-      }, 3000);
+      error("💥 CRITICAL ERROR", `Child crashed (code ${code}, signal ${signal}). Restarting in 3 s...`);
+      setTimeout(() => spawn(execPath, childArgs, { stdio: "inherit" }), 3000);
     }
   });
 
   process.exit();
 }
+
 // ─────────────────────────────────────────────
 // End launcher — actual server code begins below
 // ─────────────────────────────────────────────
+
+function banner() {
+  console.log(`${COLORS.cyan}
+──────────────────────────────────────────────
+   SPEECHSTER BACKEND SERVICE  v1.1-STABLE
+   “Where overheating meets overengineering.”
+──────────────────────────────────────────────${COLORS.reset}`);
+}
+banner();
+
+function bootStatus(name, ok = true) {
+  const pad = 35 - name.length;
+  const status = ok
+    ? `${COLORS.green}[  OK  ]${COLORS.reset}`
+    : `${COLORS.red}[FAILED]${COLORS.reset}`;
+  console.log(`${COLORS.gray}*${COLORS.reset} Starting ${name}${" ".repeat(pad)}${status}`);
+}
+
+// ─────────────────────────────
+// Sequential boot runner
+// ─────────────────────────────
+async function bootStep(name, fn) {
+  const pad = 35 - name.length;
+  process.stdout.write(`${COLORS.gray}*${COLORS.reset} Starting ${name}${" ".repeat(pad)}`);
+  try {
+    await fn();
+    console.log(`${COLORS.green}[  OK  ]${COLORS.reset}`);
+  } catch (err) {
+    console.log(`${COLORS.red}[FAILED]${COLORS.reset}`);
+    error("BOOT", `${name} failed: ${err.message || err}`);
+    throw err;
+  }
+}
+
+async function bootSequence() {
+  const bootStart = process.hrtime.bigint();
+  const steps = [];
+
+  async function timedStep(name, fn) {
+    const stepStart = process.hrtime.bigint();
+    const pad = 40 - name.length;
+    process.stdout.write(`${COLORS.gray}*${COLORS.reset} Starting ${name}${" ".repeat(pad)}`);
+    try {
+      await fn();
+      const stepEnd = process.hrtime.bigint();
+      const ms = Number(stepEnd - stepStart) / 1e6;
+      steps.push({ name, time: ms });
+      console.log(`${COLORS.green}[  OK  ]${COLORS.reset}`);
+    } catch (err) {
+      const stepEnd = process.hrtime.bigint();
+      const ms = Number(stepEnd - stepStart) / 1e6;
+      steps.push({ name, time: ms, failed: true });
+      console.log(`${COLORS.red}[FAILED]${COLORS.reset}`);
+      error("BOOT", `${name} failed: ${err.message || err}`);
+      throw err;
+    }
+  }
+
+  // sequential startup
+  await timedStep("Filesystem setup", async () => {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  });
+
+  await timedStep("Express app", async () => {
+    app.use(bodyParser.json({ limit: "10mb" }));
+    app.use(bodyParser.urlencoded({ extended: true }));
+    app.use(express.static(PUBLIC_DIR));
+  });
+
+  await timedStep("HTTPS subsystem", async () => {
+    if (!SSL_OPTS) throw new Error("No SSL certs found");
+    httpsServer.listen(HTTPS_PORT, "0.0.0.0");
+  });
+
+  await timedStep("WebSocket servers", async () => {
+    setupWebSocketServer(wssHttp);
+    setupWebSocketServer(wssHttps);
+  });
+
+  await timedStep("AI Startup", async () => {
+    // 🎧 AI Inference Subprocess (Persistent in child server)
+    try {
+      aiProc = spawn("python3", ["ai_stream.py"], { stdio: ["pipe", "pipe", "inherit"] });
+      info("AI", "Started ai_stream.py");
+
+      aiProc.stdout.on("data", (data) => {
+        const lines = data.toString().trim().split("\n");
+        for (const line of lines) {
+          try {
+            const result = JSON.parse(line);
+            emitToWebClients("esp.ai_result", result);
+            info("AI", JSON.stringify(result));
+          } catch {
+            // ignore partial / non-JSON output
+          }
+        }
+      });
+
+      aiProc.on("exit", (code) => warn("AI_PROC", `AI process exited with code ${code}`));
+      process.on("exit", () => { try { aiProc.kill(); } catch {} });
+    } catch (e) {
+      warn("AI", `Failed to start AI process: ${e.message}`);
+    }
+  });
+
+  await timedStep("Audio handler", async () => {
+    startAudioHandler(wssAudio);
+    startAudioHandler(wssAudioHttps);
+  });
+
+  await timedStep("Browser auto-launch", async () => {
+    try {
+      openBrowser(browserURL);
+    } catch {
+      warn("BOOT", "Couldn’t auto-open browser; open manually instead.");
+    }
+  });
+
+  // End of boot sequence
+  const bootEnd = process.hrtime.bigint();
+  const totalMs = Number(bootEnd - bootStart) / 1e6;
+
+  console.log(`${COLORS.cyan}──────────────────────────────────────────────${COLORS.reset}`);
+  info("SERVER", `Speechster backend ready`);
+  info("SERVER", `Local access:   https://${lanIP}:${HTTPS_PORT}`);
+  info("SERVER", `ESP will connect to host_ip=${lanIP}`);
+  console.log(`${COLORS.cyan}──────────────────────────────────────────────${COLORS.reset}`);
+
+  // summary table
+  console.log(`${COLORS.gray}Subsystem                     Time (ms)${COLORS.reset}`);
+  console.log(`${COLORS.gray}──────────────────────────────────────────────${COLORS.reset}`);
+  for (const s of steps) {
+    const padded = s.name.padEnd(30, " ");
+    const timeStr = s.failed
+      ? `${COLORS.red}${s.time.toFixed(2)}${COLORS.reset}`
+      : `${COLORS.green}${s.time.toFixed(2)}${COLORS.reset}`;
+    console.log(`${padded} ${timeStr}`);
+  }
+  console.log(`${COLORS.gray}──────────────────────────────────────────────${COLORS.reset}`);
+  console.log(`${COLORS.cyan}Total Boot Time: ${totalMs.toFixed(2)} ms${COLORS.reset}`);
+  console.log(`${COLORS.cyan}──────────────────────────────────────────────${COLORS.reset}`);
+}
 
 // -------------------------------
 // pkg-aware path resolver
@@ -116,7 +292,7 @@ function openBrowser(url) {
     else if (platform === "darwin") execChild(`open "${url}"`);
     else execChild(`xdg-open "${url}"`);
   } catch (e) {
-    console.warn("openBrowser failed:", e && e.message);
+    warn("openBrowser failed:", e && e.message);
   }
 }
 
@@ -133,7 +309,7 @@ try {
     cert: fs.readFileSync(resolvePath("certs/localhost+3.pem")),
   };
 } catch (err) {
-  console.warn("HTTPS certs not found at certs/localhost+3-*.pem. HTTPS will not start unless certs are present.", err.message);
+  warn("HTTPS certs not found at certs/localhost+3-*.pem. HTTPS will not start unless certs are present.", err.message);
   SSL_OPTS = null;
 }
 
@@ -187,7 +363,7 @@ if (httpsServer) {
 function startAudioHandler(wss) {
   if (!wss) return;
   wss.on("connection", (ws) => {
-    console.log("Audio stream connected");
+    info("AUDIO_WS", "Audio stream connected");
     const deviceId = currentDeviceId || "esp_unknown";
     const { audioDir } = ensureDeviceFolder(deviceId);
     const sessionId = crypto.randomUUID();
@@ -198,21 +374,24 @@ function startAudioHandler(wss) {
     ws.on("message", (chunk) => {
       if (!Buffer.isBuffer(chunk)) return;
       try {
-        // write to disk (optional backup)
         fileStream.write(chunk);
 
-        // forward to AI process for real-time classification
-        if (aiProc && aiProc.stdin.writable) {
+        if (typeof aiProc === "undefined" || !aiProc || aiProc.killed) {
+          warn("AUDIO_WS", "AI process not running, skipping inference");
+          return;
+        }
+
+        if (aiProc.stdin && aiProc.stdin.writable) {
           aiProc.stdin.write(chunk);
         }
       } catch (err) {
-        console.warn("Audio stream error:", err);
+        warn("AUDIO_WS_ERR", err.message || err);
       }
     });
 
     ws.on("close", () => {
       try { fileStream.end(); } catch {}
-      console.log("Stream closed:", outPath);
+      info("AUDIO_WS","Stream closed:", outPath);
       const ts = Date.now();
       lastAudioFiles.push({ device_id: deviceId, filename, ts });
       if (lastAudioFiles.length > 1000) lastAudioFiles.shift();
@@ -225,7 +404,7 @@ function startAudioHandler(wss) {
     });
 
     ws.on("error", (err) => {
-      console.warn("Audio WS error:", err.message);
+      warn("Audio WS error:", err.message);
       try { fileStream.end(); } catch {}
     });
   });
@@ -293,7 +472,7 @@ function safeListen(server, HTTPS_PORT, name) {
   server.listen(HTTPS_PORT, "0.0.0.0");
   server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
-      console.error(`Port ${HTTPS_PORT} already in use (${name}).`);
+      error(`Port ${HTTPS_PORT} already in use (${name}).`);
       process.exit(1);
     }
   });
@@ -334,7 +513,7 @@ app.post("/control", requireApiKey, (req, res) => {
 app.post("/esp/telemetry", (req, res) => {
   // allow but warn if API_KEY present
   if (API_KEY && req.header("x-api-key") !== API_KEY) {
-    console.warn("esp/telemetry: missing/invalid api key (if you configured SPEECHSTER_API_KEY).");
+    warn("esp/telemetry: missing/invalid api key (if you configured SPEECHSTER_API_KEY).");
     return res.status(401).json({ error: "Missing/invalid API key" });
   }
 
@@ -343,7 +522,7 @@ app.post("/esp/telemetry", (req, res) => {
   // Single-ESP policy: accept first seen device or overwrite if same
   if (!currentDeviceId) currentDeviceId = device_id;
   if (device_id !== currentDeviceId) {
-    console.warn(`Telemetry received from unexpected device "${device_id}" while current is "${currentDeviceId}". Replacing current device.`);
+    warn(`Telemetry received from unexpected device "${device_id}" while current is "${currentDeviceId}". Replacing current device.`);
     currentDeviceId = device_id;
   }
 
@@ -371,7 +550,7 @@ app.post("/esp/upload", upload.single("file"), (req, res) => {
 
   fs.writeFile(outPath, req.file.buffer, (err) => {
     if (err) {
-      console.error("Failed to write upload:", err);
+      error("Failed to write upload:", err);
       return res.status(500).json({ error: "Write failed" });
     }
     lastAudioFiles.push({ device_id, filename, ts });
@@ -407,7 +586,7 @@ app.get("/esp/commands", (req, res) => {
     currentDeviceId = device_id;
   } else if (device_id !== currentDeviceId) {
     // reject polls from other devices (single-ESP policy)
-    console.warn(`Rejected command poll from ${device_id} — current device is ${currentDeviceId}`);
+    warn(`Rejected command poll from ${device_id} — current device is ${currentDeviceId}`);
     return res.json({ empty: true, message: "not-registered" });
   }
 
@@ -441,7 +620,7 @@ app.get("/status", (req, res) => {
 function setupWebSocketServer(wss) {
   if (!wss) return;
   wss.on("connection", (ws) => {
-    console.log("WS client connected");
+    info("WS","WS client connected");
     ws.send(JSON.stringify({ type: "welcome", ts: Date.now() }));
 
     ws.on("message", (msg) => {
@@ -456,10 +635,10 @@ function setupWebSocketServer(wss) {
           ws.send(JSON.stringify({ type: "control.queued", device_id: currentDeviceId, id }));
         }
       } catch (e) {
-        console.warn("WS invalid JSON", e);
+        warn("WS invalid JSON", e);
       }
     });
-    ws.on("close", () => console.log("WS client disconnected"));
+    ws.on("close", () => info("WS","WS client disconnected"));
   });
 }
 setupWebSocketServer(wssHttp);
@@ -469,16 +648,16 @@ setupWebSocketServer(wssHttps);
 // Graceful shutdown
 // -------------------------------
 function gracefulShutdown(signal) {
-  console.log(`Received ${signal}, shutting down...`);
-  try { httpServer.close(() => console.log("HTTP closed")); } catch (e) {}
-  if (httpsServer) try { httpsServer.close(() => console.log("HTTPS closed")); } catch (e) {}
+  info("SHUTDOWN_D",`Received ${signal}, shutting down...`);
+  try { httpServer.close(() => info("SERVER_D","HTTP closed")); } catch (e) {}
+  if (httpsServer) try { httpsServer.close(() => info("SERVER_D","HTTPS closed")); } catch (e) {}
   allClients().forEach(c => { try { c.close(1001, "Server shutting down"); } catch (e) {} });
-  setTimeout(() => { console.log("Exited."); process.exit(0); }, 300);
+  setTimeout(() => { info("SHUTDOWN_D","Exited."); process.exit(0); }, 300);
 }
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("uncaughtException", (err) => {
-  console.error("Uncaught exception:", err);
+  error("Uncaught exception:", err);
   gracefulShutdown("uncaughtException");
 });
 
@@ -502,23 +681,12 @@ const browserURL = `https://${lanIP}:${HTTPS_PORT}`;
 // Start servers
 // -------------------------------
 
-safeListen(httpServer, HTTP_PORT, "HTTP");
-
-if (httpsServer) {
-  httpsServer.listen(HTTPS_PORT, "0.0.0.0", () => {
-  console.log(`Speechster server ready`);
-  console.log(`Local access:   https://${lanIP}:${HTTPS_PORT}`);
-  console.log(`ESP will connect to host_ip=${lanIP}`);
-  console.log(`If using another device, open the above URL in its browser`);
+(async () => {
   try {
-    open(browserURL);
-  } catch {
-    console.log(`(Couldn’t auto-open browser; open manually instead.)`);
+    safeListen(httpServer, HTTP_PORT, "HTTP");
+    await bootSequence();
+  } catch (err) {
+    error("BOOT", `Startup failed: ${err.message}`);
+    process.exit(1);
   }
-});
-
-} else {
-  console.warn("HTTPS not started (missing certs). Starting HTTP only; Web Bluetooth will not work without trusted HTTPS.");
-  // still open HTTP UI so you can test
-  try { openBrowser(`http://0.0.0.0:${HTTP_PORT}`); } catch (e) {}
-}
+})();

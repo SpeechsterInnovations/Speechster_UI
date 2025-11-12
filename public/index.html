@@ -62,10 +62,6 @@
         <button id="level-mode-btn" class="btn">Levels</button>
       </div>
       <hr />
-      <div id="connection-status-container">
-        <div id="device-light" class="red-light"></div>
-        <span id="bluetooth-status">Disconnected</span>
-      </div>
       <div class="bottom-buttons">
         <button id="wifi-take-btn" class="btn">Connect</button>
         <button id="patient-select-btn" class="btn">Select Patient</button>
@@ -100,6 +96,8 @@
       <h1>Level 1: Tongue Sensor</h1>
       <p>Click "Start!" to start the 3-minute timer. The score will increase every time you touch the top part of your mouth.</p>
       <span class="timer" id="level-1-timer">03:00</span>
+      <br>
+
       <span class="score-display" id="level-1-score">0</span>
       <p id="level-1-feedback" class="feedback-message"></p>
       <div class="button-container">
@@ -176,6 +174,7 @@
 
     <!-- WiFi Setup Screen -->
     <div id="wifi-setup-screen" class="screen">
+      <button id="wifi-setup-back" class="back-btn">&#8592;</button>
       <div id="auth-forms-container">
         <form id="wifi-login-form">
           <h2>Input Your WiFi Credentials (REQUIRED)</h2>

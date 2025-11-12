@@ -14,6 +14,37 @@ const TOAST_SOUNDS = {
   info   :              "/sounds/toasts/info.mp3",
 };
 
+// Centralized Toast Event Map
+const ToastEvents = {
+  BLE_CONNECTED: {
+    type: "success",
+    title: "Bluetooth Connected",
+    body: "Speechster device is now connected via Bluetooth and WiFi!"
+  },
+  WIFI_FAIL: {
+    type: "error",
+    title: "Wi-Fi Failed",
+    body: "Could not connect to the network. Please check your credentials."
+  },
+  SESSION_SAVED: {
+    type: "success",
+    title: "Session Saved",
+    body: "All session data was stored safely."
+  },
+  LOGIN_SUCCESS: {
+    type: "success",
+    title: "Login Successful",
+    body: "Welcome back to Speechster!"
+  },
+  LOGIN_FAILED: {
+    type: "warning",
+    title: "Login Failed",
+    body: "Incorrect credentials or user not found."
+  },
+  // Add more as needed...
+};
+
+
 function initAudioContext() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.AudioContext)();
@@ -421,7 +452,7 @@ async function saveDBData(mode) {
       }
 
       await writeToDB(path, payload);
-      showToast("success", `Data saved for ${mode} (${sessionId})`);
+      triggerToast("SESSION_SAVED")
 
   } catch (error) {
       console.error("Failed to save data:", error);
@@ -463,7 +494,7 @@ async function handleLogin(email, password) {
   try {
     const { signInWithEmailAndPassword } = window.firebaseModules;
     await signInWithEmailAndPassword(window.firebaseAuth, email, password);
-    showToast('success',`Logged In as ${email}`)
+    triggerToast("LOGIN_SUCCESS")
     console.log("Logged in as", email)
     return true;
   } catch (error) {
@@ -480,7 +511,7 @@ async function handleLogin(email, password) {
       errorMessage = 'Incorrect password.';
     }
 
-    showToast('warning',errorMessage)
+    showToast('error',errorMessage, "login failed")
     return false;
   }
 }
@@ -929,6 +960,20 @@ function showToast(type, message, header) {
   }
 }
 
+/**
+ * Fires a pre-mapped toast event.
+ * Example: triggerToast("BLE_CONNECTED");
+ */
+function triggerToast(eventKey) {
+  const t = ToastEvents[eventKey];
+  if (!t) {
+    console.warn(`⚠️ Unknown toast event: ${eventKey}`);
+    return;
+  }
+  showToast(t.type, t.body, t.title);
+}
+
+
 // -----------------
 // Background Sound
 // -----------------
@@ -995,36 +1040,6 @@ function selectPatient(patientId) {
   AppState.selectedPatientId = patientId;
   showToast("info", `Selected patient: ${patientId}`);
   return { success: true, patientId };
-}
-
-async function saveDataCommand(score, extraInfo = "") {
-  if (!AppState.user || AppState.user.designation !== 'doctor') {
-    showToast("error", "Only doctors can save data.", "critical error");
-    return { success: false, message: 'Not authorized' };
-  }
-  if (!AppState.selectedPatientId) {
-    showToast("error", "No patient selected.", "critical error");
-    return { success: false, message: 'No patient selected' };
-  }
-  try {
-    const doctorId = AppState.user.uid;
-    const patientId = AppState.selectedPatientId;
-    const sessionId = `session-${Date.now()}`;
-    const path = `patientData/${patientId}/sessions/${sessionId}`;
-    const payload = {
-      score,
-      extraInfo,
-      by: doctorId,
-      timestamp: serverTimestamp()
-    };
-    await writeToDB(path, payload);
-    showToast("success", `Data saved for ${patientId} (session ${sessionId})`);
-    return { success: true, patientId, sessionId, data: payload };
-  } catch (err) {
-    console.error(err);
-    showToast("error", "Failed to save data.", "critical error");
-    return { success: false, message: err.message };
-  }
 }
 
 // --------------------------
@@ -1257,9 +1272,9 @@ function handleNotification(event) {
     }
 
     if (msg.wifi && msg.wifi === "connected") {
-      showToast("success", "ESP32 connected to Wi-Fi!");
+      triggerToast("BLE_CONNECTED");
     } else if (msg.wifi && msg.wifi === "failed") {
-      showToast("error", "ESP32 failed to connect to Wi-Fi.");
+      triggerToast("WIFI_FAIL")
     }
 
     if (msg.ota) {
@@ -1329,50 +1344,87 @@ document.getElementById("bt-connect-btn").addEventListener("click", async (event
 
 let bleFirstMessageSent = false;
 
-async function sendBLECommand(command) {
-  const backendUrl = window.location.origin;
-  const hostname = window.location.hostname;
-  const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
+let cachedHostIP = null;
 
-  let hostIP = hostname;
+async function getReachableHostIP() {
+  // Return cached if available
+  if (cachedHostIP) return cachedHostIP;
 
-  // Detect LAN IP only if needed
-  if (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    /^[a-zA-Z]+$/.test(hostname)
-  ) {
-    console.log("Attempting to detect LAN IP...");
-    const ip = await getLocalIPAddress();
-    if (ip) {
-      hostIP = ip;
-      console.log("Detected LAN IP:", ip);
-    } else {
-      console.warn("Could not detect LAN IP. Using default hostname.");
-    }
+  const fallbackHost = window.location.hostname;
+  const port = 8080;
+
+  // Try to detect LAN IP
+  let localIP = null;
+  try {
+    // STUN-style trick to detect local IPs using WebRTC
+    localIP = await new Promise((resolve, reject) => {
+      const pc = new RTCPeerConnection({ iceServers: [] });
+      pc.createDataChannel("");
+      pc.createOffer().then(offer => pc.setLocalDescription(offer));
+
+      pc.onicecandidate = (ice) => {
+        if (!ice || !ice.candidate) {
+          pc.close();
+          reject("No ICE candidate");
+          return;
+        }
+        const ipMatch = ice.candidate.candidate.match(
+          /([0-9]{1,3}(\.[0-9]{1,3}){3})/
+        );
+        if (ipMatch) {
+          pc.close();
+          resolve(ipMatch[1]);
+        }
+      };
+    });
+  } catch (e) {
+    console.warn("⚠️ Could not auto-detect LAN IP:", e);
   }
 
-  // ✅ Only include host_ip/host_port if first message (ssid+pass)
+  // Prefer the detected LAN IP if reachable
+  const candidate = localIP || fallbackHost;
+  const reachable = await testHostReachability(candidate, port);
+  cachedHostIP = reachable ? candidate : fallbackHost;
+
+  console.log(`🌐 Using host IP: ${cachedHostIP} (fallback: ${fallbackHost})`);
+  return cachedHostIP;
+}
+
+async function testHostReachability(host, port) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1500);
+
+    const res = await fetch(`http://${host}:${port}/ping`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function sendBLECommand(command) {
+  const backendUrl = window.location.origin;
+  const hostIP = await getReachableHostIP();
+  const port = 9500;
+
   let fullCommand;
-  if (!bleFirstMessageSent && command.ssid && command.pass) {
+  if (command.ssid && command.pass) {
     fullCommand = { ...command, host_ip: hostIP, host_port: String(port) };
-    bleFirstMessageSent = true; // Prevent future inclusion
   } else {
     fullCommand = { ...command };
   }
 
-  // BLE send
   if (writeChar) {
-    try {
-      const json = new TextEncoder().encode(JSON.stringify(fullCommand));
-      await writeChar.writeValue(json);
-      console.log("Sent via BLE:", fullCommand);
-    } catch (err) {
-      console.error("BLE write failed:", err);
-    }
+    const json = new TextEncoder().encode(JSON.stringify(fullCommand));
+    await writeChar.writeValue(json);
+    console.log("📡 Sent via BLE:", fullCommand);
   }
 
-  // Optional: send to backend
   try {
     await fetch(`${backendUrl}/control`, {
       method: "POST",
@@ -1382,11 +1434,11 @@ async function sendBLECommand(command) {
         command: fullCommand,
       }),
     });
-    console.log("Pushed command to backend:", fullCommand);
   } catch (err) {
-    console.error("Failed to push command to backend:", err);
+    console.error("❌ Failed to push command to backend:", err);
   }
 }
+
 
 const wsHost = window.location.hostname === "0.0.0.0" ? "localhost" : window.location.hostname;
 const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -1452,7 +1504,6 @@ Object.assign(window.firebaseModules, {
   assignPatient,
   unassignPatient,
   selectPatient,
-  saveDataCommand,
   showToast,
   navigateToScreen,
   sendBLECommand,
