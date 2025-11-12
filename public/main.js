@@ -44,38 +44,6 @@ const ToastEvents = {
   // Add more as needed...
 };
 
-
-// Centralized Toast Event Map
-const ToastEvents = {
-  BLE_CONNECTED: {
-    type: "success",
-    title: "Bluetooth Connected",
-    body: "Speechster device is now connected via Bluetooth and WiFi!"
-  },
-  WIFI_FAIL: {
-    type: "error",
-    title: "Wi-Fi Failed",
-    body: "Could not connect to the network. Please check your credentials."
-  },
-  SESSION_SAVED: {
-    type: "success",
-    title: "Session Saved",
-    body: "All session data was stored safely."
-  },
-  LOGIN_SUCCESS: {
-    type: "success",
-    title: "Login Successful",
-    body: "Welcome back to Speechster!"
-  },
-  LOGIN_FAILED: {
-    type: "warning",
-    title: "Login Failed",
-    body: "Incorrect credentials or user not found."
-  },
-  // Add more as needed...
-};
-
-
 function initAudioContext() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.AudioContext)();
